@@ -1,0 +1,73 @@
+export default async (req) => {
+  const url = new URL(req.url, req.origin);
+  const nick = url.searchParams.get('nick')?.trim();
+
+  if (!nick) {
+    return new Response('Укажите ник: ?nick=НИК', {
+      status: 400,
+      headers: { 'Content-Type': 'text/plain' }
+    });
+  }
+
+  // API-ключ FACEIT берётся из переменных окружения Vercel
+  const apiKey = process.env.FACEIT_API_KEY;
+  if (!apiKey) {
+    return new Response('Сервис не настроен: нет API-ключа', {
+      status: 500,
+      headers: { 'Content-Type': 'text/plain' }
+    });
+  }
+
+  try {
+    // Запрос к официальному API FACEIT v4
+    const res = await fetch(
+      `https://open.faceit.com/data/v4/players?nickname=${encodeURIComponent(nick)}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    if (res.status === 404) {
+      return new Response('Игрок не найден', {
+        status: 404,
+        headers: { 'Content-Type': 'text/plain' }
+      });
+    }
+
+    if (!res.ok) {
+      return new Response(`Ошибка FACEIT API: ${res.status}`, {
+        status: 502,
+        headers: { 'Content-Type': 'text/plain' }
+      });
+    }
+
+    const data = await res.json();
+
+    // ELO лежит в games.cs2 (или games.csgo для старой версии)
+    const game = data.games?.cs2 || data.games?.csgo;
+    if (!game) {
+      return new Response('У игрока нет статистики CS2', {
+        status: 404,
+        headers: { 'Content-Type': 'text/plain' }
+      });
+    }
+
+    const elo = game.faceit_elo;
+    const level = game.skill_level;
+
+    // Возвращаем короткую строку для Nightbot
+    return new Response(`Level ${level} | ${elo} ELO`, {
+      headers: { 'Content-Type': 'text/plain' }
+    });
+
+  } catch (e) {
+    console.error('FACEIT API error:', e);
+    return new Response('Ошибка сервиса', {
+      status: 500,
+      headers: { 'Content-Type': 'text/plain' }
+    });
+  }
+};
